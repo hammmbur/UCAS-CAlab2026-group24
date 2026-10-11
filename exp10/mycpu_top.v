@@ -32,6 +32,7 @@ reg [31:0] id_pc;
 reg [31:0] id_inst;
 
 // ID/EXE pipeline register.
+reg [6:0] exe_md_op;
 reg        exe_valid;
 reg [31:0] exe_pc;
 reg [11:0] exe_alu_op;
@@ -89,6 +90,25 @@ wire inst_add_w, inst_sub_w, inst_slt, inst_sltu;
 wire inst_nor, inst_and, inst_or, inst_xor;
 wire inst_slli_w, inst_srli_w, inst_srai_w, inst_addi_w;
 wire inst_ld_w, inst_st_w, inst_jirl, inst_b, inst_bl, inst_beq, inst_bne, inst_lu12i_w;
+wire inst_slti;
+wire inst_sltui;
+wire inst_andi;
+wire inst_ori;
+wire inst_xori;
+wire inst_sll_w;
+wire inst_srl_w;
+wire inst_sra_w;
+wire inst_pcaddu12i;
+wire inst_mul_w;
+wire inst_mulh_w;
+wire inst_mulh_wu;
+wire inst_div_w;
+wire inst_mod_w;
+wire inst_div_wu;
+wire inst_mod_wu;
+wire [6:0] id_md_op;
+wire id_new_imm = inst_slti | inst_sltui | inst_andi | inst_ori | inst_xori;
+wire id_new_reg = inst_sll_w | inst_srl_w | inst_sra_w | (|id_md_op);
 wire [11:0] id_alu_op;
 wire        id_src1_is_pc;
 wire        id_src2_is_imm;
@@ -145,43 +165,62 @@ assign inst_beq     = op_31_26_d[6'h16];
 assign inst_bne     = op_31_26_d[6'h17];
 assign inst_lu12i_w = op_31_26_d[6'h05] & ~id_inst[25];
 
-assign id_alu_op[ 0] = inst_add_w | inst_addi_w | inst_ld_w | inst_st_w | inst_jirl | inst_bl;
+assign inst_slti = op_31_26_d[0] & op_25_22_d[8];
+assign inst_sltui = op_31_26_d[0] & op_25_22_d[9];
+assign inst_andi = op_31_26_d[0] & op_25_22_d[13];
+assign inst_ori = op_31_26_d[0] & op_25_22_d[14];
+assign inst_xori = op_31_26_d[0] & op_25_22_d[15];
+assign inst_sll_w = op_31_26_d[0] & op_25_22_d[0] & op_21_20_d[1] & op_19_15_d[14];
+assign inst_srl_w = op_31_26_d[0] & op_25_22_d[0] & op_21_20_d[1] & op_19_15_d[15];
+assign inst_sra_w = op_31_26_d[0] & op_25_22_d[0] & op_21_20_d[1] & op_19_15_d[16];
+assign inst_mul_w = op_31_26_d[0] & op_25_22_d[0] & op_21_20_d[1] & op_19_15_d[24];
+assign inst_mulh_w = op_31_26_d[0] & op_25_22_d[0] & op_21_20_d[1] & op_19_15_d[25];
+assign inst_mulh_wu = op_31_26_d[0] & op_25_22_d[0] & op_21_20_d[1] & op_19_15_d[26];
+assign inst_div_w = op_31_26_d[0] & op_25_22_d[0] & op_21_20_d[2] & op_19_15_d[0];
+assign inst_mod_w = op_31_26_d[0] & op_25_22_d[0] & op_21_20_d[2] & op_19_15_d[1];
+assign inst_div_wu = op_31_26_d[0] & op_25_22_d[0] & op_21_20_d[2] & op_19_15_d[2];
+assign inst_mod_wu = op_31_26_d[0] & op_25_22_d[0] & op_21_20_d[2] & op_19_15_d[3];
+assign inst_pcaddu12i = op_31_26_d[7] & ~id_inst[25];
+assign id_md_op = {inst_mod_wu, inst_div_wu, inst_mod_w, inst_div_w, inst_mulh_wu, inst_mulh_w, inst_mul_w};
+
+assign id_alu_op[ 0] = inst_add_w | inst_addi_w | inst_ld_w | inst_st_w | inst_jirl | inst_bl | inst_pcaddu12i;
 assign id_alu_op[ 1] = inst_sub_w;
-assign id_alu_op[ 2] = inst_slt;
-assign id_alu_op[ 3] = inst_sltu;
-assign id_alu_op[ 4] = inst_and;
+assign id_alu_op[ 2] = inst_slt | inst_slti;
+assign id_alu_op[ 3] = inst_sltu | inst_sltui;
+assign id_alu_op[ 4] = inst_and | inst_andi;
 assign id_alu_op[ 5] = inst_nor;
-assign id_alu_op[ 6] = inst_or;
-assign id_alu_op[ 7] = inst_xor;
-assign id_alu_op[ 8] = inst_slli_w;
-assign id_alu_op[ 9] = inst_srli_w;
-assign id_alu_op[10] = inst_srai_w;
+assign id_alu_op[ 6] = inst_or | inst_ori;
+assign id_alu_op[ 7] = inst_xor | inst_xori;
+assign id_alu_op[ 8] = inst_slli_w | inst_sll_w;
+assign id_alu_op[ 9] = inst_srli_w | inst_srl_w;
+assign id_alu_op[10] = inst_srai_w | inst_sra_w;
 assign id_alu_op[11] = inst_lu12i_w;
 
 assign id_imm = (inst_jirl | inst_bl) ? 32'h4 :
-                inst_lu12i_w          ? {i20, 12'b0} :
+                (inst_lu12i_w | inst_pcaddu12i) ? {i20, 12'b0} :
+                (inst_andi | inst_ori | inst_xori) ? {20'b0, i12} :
                                       {{20{i12[11]}}, i12};
 assign id_br_offs = (inst_b | inst_bl) ? {{4{i26[25]}}, i26, 2'b0} :
                                           {{14{i16[15]}}, i16, 2'b0};
 assign id_jirl_offs = {{14{i16[15]}}, i16, 2'b0};
 assign id_src_reg_is_rd = inst_beq | inst_bne | inst_st_w;
-assign id_src1_is_pc    = inst_jirl | inst_bl;
-assign id_src2_is_imm   = inst_slli_w | inst_srli_w | inst_srai_w |
+assign id_src1_is_pc    = inst_jirl | inst_bl | inst_pcaddu12i;
+assign id_src2_is_imm   = id_new_imm | inst_pcaddu12i | inst_slli_w | inst_srli_w | inst_srai_w |
                           inst_addi_w | inst_ld_w | inst_st_w | inst_lu12i_w |
                           inst_jirl | inst_bl;
 assign id_res_from_mem  = inst_ld_w;
 assign id_dst_is_r1     = inst_bl;
-assign id_gr_we         = inst_add_w | inst_sub_w | inst_slt | inst_sltu |
+assign id_gr_we         = id_new_imm | id_new_reg | inst_pcaddu12i | inst_add_w | inst_sub_w | inst_slt | inst_sltu |
                           inst_nor | inst_and | inst_or | inst_xor |
                           inst_slli_w | inst_srli_w | inst_srai_w | inst_addi_w |
                           inst_ld_w | inst_jirl | inst_bl | inst_lu12i_w;
 assign id_mem_we        = inst_st_w;
 assign id_dest          = id_dst_is_r1 ? 5'd1 : rd;
-assign id_rj_used       = inst_add_w | inst_sub_w | inst_slt | inst_sltu |
+assign id_rj_used       = id_new_imm | id_new_reg | inst_add_w | inst_sub_w | inst_slt | inst_sltu |
                           inst_nor | inst_and | inst_or | inst_xor |
                           inst_slli_w | inst_srli_w | inst_srai_w | inst_addi_w |
                           inst_ld_w | inst_st_w | inst_jirl | inst_beq | inst_bne;
-assign id_rkd_used      = inst_add_w | inst_sub_w | inst_slt | inst_sltu |
+assign id_rkd_used      = id_new_reg | inst_add_w | inst_sub_w | inst_slt | inst_sltu |
                           inst_nor | inst_and | inst_or | inst_xor |
                           inst_st_w | inst_beq | inst_bne;
 
@@ -200,6 +239,8 @@ wire [31:0] id_rj_value;
 wire [31:0] id_rkd_value;
 wire        id_rj_eq_rkd;
 wire [31:0] exe_alu_result;
+wire [31:0] exe_final_result;
+wire        exe_wait;
 wire [31:0] wb_final_result;
 assign rf_raddr1 = rj;
 assign rf_raddr2 = id_src_reg_is_rd ? rd : rk;
@@ -217,7 +258,7 @@ Forwarding unit
 wire [31:0] exe_forward_value;
 wire [31:0] mem_forward_value;
 wire [31:0] wb_forward_value;
-assign exe_forward_value = exe_alu_result;
+assign exe_forward_value = exe_final_result;
 assign mem_forward_value = mem_res_from_mem ? data_sram_rdata : mem_alu_result;
 assign wb_forward_value  = wb_final_result;
 
@@ -242,7 +283,7 @@ assign id_rkd_value =
 assign id_rj_eq_rkd = (id_rj_value == id_rkd_value);
 
 /*
-Blocking unit: for exp9, only take place when coming across RAW hazard in ld.w
+Blocking unit: load-use bubble and multi-cycle division backpressure
 */
 wire exe_load_use_hazard;
 wire id_stall;
@@ -250,13 +291,73 @@ assign exe_load_use_hazard = exe_valid && exe_gr_we && exe_res_from_mem &&
                              (exe_dest != 5'd0) &&
                              ((id_rj_used  && (rj        == exe_dest)) ||
                               (id_rkd_used && (rf_raddr2 == exe_dest)));
-assign id_stall = id_valid && exe_load_use_hazard;
+assign id_stall = exe_wait || (id_valid && exe_load_use_hazard);
 
 assign id_br_taken  = id_valid && !id_stall && ((inst_beq && id_rj_eq_rkd) ||
                                    (inst_bne && !id_rj_eq_rkd) ||
                                     inst_jirl || inst_bl || inst_b);
 assign id_br_target = (inst_beq || inst_bne || inst_bl || inst_b) ?
                       (id_pc + id_br_offs) : (id_rj_value + id_jirl_offs);
+
+// One signed 33x33 multiplier supports both signed and unsigned high words.
+wire signed [32:0] mul_a = {exe_md_op[1] & exe_alu_src1[31], exe_alu_src1};
+wire signed [32:0] mul_b = {exe_md_op[1] & exe_alu_src2[31], exe_alu_src2};
+wire signed [65:0] mul_product = mul_a * mul_b;
+wire exe_is_div = |exe_md_op[6:3];
+wire exe_div_signed = exe_md_op[3] | exe_md_op[4];
+reg div_busy, div_done;
+reg [5:0] div_count;
+reg [31:0] div_quot, div_rem, div_den;
+reg div_neg_quot, div_neg_rem;
+wire [32:0] div_shift = {div_rem, div_quot[31]};
+wire [32:0] div_diff = div_shift - {1'b0, div_den};
+wire [31:0] div_next_rem = div_diff[32] ? div_shift[31:0] : div_diff[31:0];
+wire [31:0] div_next_quot = {div_quot[30:0], !div_diff[32]};
+wire [31:0] div_result = (exe_md_op[4] | exe_md_op[6]) ? div_rem : div_quot;
+assign exe_wait = exe_valid && exe_is_div && !div_done;
+assign exe_final_result =
+    exe_md_op[0] ? mul_product[31:0] :
+    (exe_md_op[1] | exe_md_op[2]) ? mul_product[63:32] :
+    exe_is_div ? div_result : exe_alu_result;
+
+// Restoring division: 32 iterations on magnitudes, followed by sign correction.
+// Hold IF/ID/EXE while busy; older MEM/WB instructions continue to retire.
+always @(posedge clk) begin
+    if (reset) begin
+        div_busy <= 1'b0;
+        div_done <= 1'b0;
+        div_count <= 6'b0;
+        div_quot <= 32'b0;
+        div_rem <= 32'b0;
+        div_den <= 32'b0;
+        div_neg_quot <= 1'b0;
+        div_neg_rem <= 1'b0;
+    end else if (div_busy) begin
+        div_count <= div_count + 1'b1;
+        if (div_count == 6'd31) begin
+            div_quot <= div_neg_quot ? (~div_next_quot + 32'd1) : div_next_quot;
+            div_rem <= div_neg_rem ? (~div_next_rem + 32'd1) : div_next_rem;
+            div_busy <= 1'b0;
+            div_done <= 1'b1;
+        end else begin
+            div_quot <= div_next_quot;
+            div_rem <= div_next_rem;
+        end
+    end else begin
+        div_done <= 1'b0;
+        if (exe_valid && exe_is_div && !div_done) begin
+            div_busy <= 1'b1;
+            div_count <= 6'b0;
+            div_rem <= 32'b0;
+            div_quot <= (exe_div_signed && exe_alu_src1[31]) ?
+                        (~exe_alu_src1 + 32'd1) : exe_alu_src1;
+            div_den <= (exe_div_signed && exe_alu_src2[31]) ?
+                       (~exe_alu_src2 + 32'd1) : exe_alu_src2;
+            div_neg_quot <= exe_div_signed && (exe_alu_src1[31] ^ exe_alu_src2[31]);
+            div_neg_rem <= exe_div_signed && exe_alu_src1[31];
+        end
+    end
+end
 
 // EXE stage and its SRAM request.
 alu u_alu(
@@ -275,8 +376,8 @@ assign data_sram_wdata = exe_store_data;
 /*
 CPU pipeline: IF->ID->EX->MEM->WB
 */
-// A load result is unavailable while the load is in EXE.  Hold ID/IF for that
-// one cycle and inject a bubble into EXE; MEM/WB continue to advance.
+// A load-use hazard injects an EXE bubble; division holds IF/ID/EXE.
+// In both cases MEM/WB continue to advance, without retiring EXE twice.
 always @(posedge clk) begin
     if (reset) begin
         if_valid  <= 1'b0;
@@ -284,6 +385,7 @@ always @(posedge clk) begin
         if_resp_valid <= 1'b0;
         id_valid  <= 1'b0;
         exe_valid <= 1'b0;
+        exe_md_op <= 7'b0;
         mem_valid <= 1'b0;
         wb_valid  <= 1'b0;
     end
@@ -305,34 +407,39 @@ always @(posedge clk) begin
             if_resp_pc <= if_pc;
         end
 
-        if (id_stall) begin
-            exe_valid        <= 1'b0;
-            exe_pc           <= 32'b0;
-            exe_alu_op       <= 12'b0;
-            exe_alu_src1     <= 32'b0;
-            exe_alu_src2     <= 32'b0;
-            exe_store_data   <= 32'b0;
-            exe_dest         <= 5'b0;
-            exe_gr_we        <= 1'b0;
-            exe_mem_we       <= 1'b0;
-            exe_res_from_mem <= 1'b0;
-        end
-        else begin
-            exe_valid        <= id_valid;
-            exe_pc           <= id_pc;
-            exe_alu_op       <= id_alu_op;
-            exe_alu_src1     <= id_src1_is_pc ? id_pc : id_rj_value;
-            exe_alu_src2     <= id_src2_is_imm ? id_imm : id_rkd_value;
-            exe_store_data   <= id_rkd_value;
-            exe_dest         <= id_dest;
-            exe_gr_we        <= id_gr_we;
-            exe_mem_we       <= id_mem_we;
-            exe_res_from_mem <= id_res_from_mem;
-        end
+        if (!exe_wait) begin
+            if (id_stall) begin
+                exe_md_op        <= 7'b0;
+                exe_valid        <= 1'b0;
+                exe_pc           <= 32'b0;
+                exe_alu_op       <= 12'b0;
+                exe_alu_src1     <= 32'b0;
+                exe_alu_src2     <= 32'b0;
+                exe_store_data   <= 32'b0;
+                exe_dest         <= 5'b0;
+                exe_gr_we        <= 1'b0;
+                exe_mem_we       <= 1'b0;
+                exe_res_from_mem <= 1'b0;
+            end
+            else begin
+                exe_md_op        <= id_md_op;
+                exe_valid        <= id_valid;
+                exe_pc           <= id_pc;
+                exe_alu_op       <= id_alu_op;
+                exe_alu_src1     <= id_src1_is_pc ? id_pc : id_rj_value;
+                exe_alu_src2     <= id_src2_is_imm ? id_imm : id_rkd_value;
+                exe_store_data   <= id_rkd_value;
+                exe_dest         <= id_dest;
+                exe_gr_we        <= id_gr_we;
+                exe_mem_we       <= id_mem_we;
+                exe_res_from_mem <= id_res_from_mem;
+            end
 
-        mem_valid        <= exe_valid;
+        end // !exe_wait
+
+        mem_valid        <= exe_valid && !exe_wait;
         mem_pc           <= exe_pc;
-        mem_alu_result   <= exe_alu_result;
+        mem_alu_result   <= exe_final_result;
         mem_dest         <= exe_dest;
         mem_gr_we        <= exe_gr_we;
         mem_res_from_mem <= exe_res_from_mem;
