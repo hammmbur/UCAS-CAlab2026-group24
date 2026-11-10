@@ -1,0 +1,8 @@
+soc_verify/soc_axi/run_vivado/project/
+soc_verify/soc_axi/run_vivado/.Xil/
+soc_verify/soc_axi/run_vivado/-p/
+soc_verify/soc_axi/run_vivado/vivado*.log
+soc_verify/soc_axi/run_vivado/vivado*.jou
+soc_verify/soc_axi/run_vivado/dfx_runtime.txt
+soc_verify/soc_axi/rtl/xilinx_ip/*/*
+!soc_verify/soc_axi/rtl/xilinx_ip/*/*.xci
